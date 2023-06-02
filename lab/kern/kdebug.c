@@ -14,13 +14,13 @@ extern const struct Stab __STAB_END__[];   // End of stabs table
 extern const char __STABSTR_BEGIN__[];	   // Beginning of string table
 extern const char __STABSTR_END__[];	   // End of string table
 
-struct UserStabData {
+struct UserStabData
+{
 	const struct Stab *stabs;
 	const struct Stab *stab_end;
 	const char *stabstr;
 	const char *stabstr_end;
 };
-
 
 // stab_binsearch(stabs, region_left, region_right, type, addr)
 //
@@ -140,17 +140,21 @@ int debuginfo_eip(uintptr_t addr, struct Eipdebuginfo *info)
 		stab_end = __STAB_END__;
 		stabstr = __STABSTR_BEGIN__;
 		stabstr_end = __STABSTR_END__;
-	} else {
+	}
+	else
+	{
 		// The user-application linker script, user/user.ld,
 		// puts information about the application's stabs (equivalent
 		// to __STAB_BEGIN__, __STAB_END__, __STABSTR_BEGIN__, and
 		// __STABSTR_END__) in a structure located at virtual address
 		// USTABDATA.
-		const struct UserStabData *usd = (const struct UserStabData *) USTABDATA;
+		const struct UserStabData *usd = (const struct UserStabData *)USTABDATA;
 
 		// Make sure this memory is valid.
 		// Return -1 if it is not.  Hint: Call user_mem_check.
 		// LAB 3: Your code here.
+		if (user_mem_check(curenv, (void *)usd, sizeof(struct UserStabData), PTE_U) < 0)
+			return -1;
 
 		stabs = usd->stabs;
 		stab_end = usd->stab_end;
@@ -159,6 +163,9 @@ int debuginfo_eip(uintptr_t addr, struct Eipdebuginfo *info)
 
 		// Make sure the STABS and string table memory is valid.
 		// LAB 3: Your code here.
+		if (user_mem_check(curenv, (void *)stabs, (uintptr_t)stab_end - (uintptr_t)stabs, PTE_U) < 0 ||
+			user_mem_check(curenv, (void *)stabstr, (uintptr_t)stabstr_end - (uintptr_t)stabstr, PTE_U) < 0)
+			return -1;
 	}
 
 	// String table validity checks

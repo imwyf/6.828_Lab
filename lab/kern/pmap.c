@@ -173,6 +173,7 @@ void mem_init(void)
 	//////////////////////////////////////////////////////////////////////
 	// Make 'envs' point to an array of size 'NENV' of 'struct Env'.
 	// LAB 3: Your code here.
+	envs = (struct Env *)boot_alloc(NENV * sizeof(struct Env));
 	//////////////////////////////////////////////////////////////////////
 	// 我们分配了pages用的空间后，接下来需要调用page_init()初始化pages
 	page_init(); // 初始化之后，所有的内存管理都将通过page_*函数进行
@@ -185,9 +186,9 @@ void mem_init(void)
 	// Now we set up virtual memory
 
 	//////////////////////////////////////////////////////////////////////
-	// 将分配器的pages数组映射到UPAGES地址，并且设置对用户只读
+	// 将分配器的pages数组映射到地址UPAGES处，并且设置对用户只读
 	// Your code goes here:
-	boot_map_region(kern_pgdir, UPAGES, PTSIZE, PADDR(pages), PTE_U);
+	boot_map_region(kern_pgdir, UPAGES, npages * sizeof(struct PageInfo), PADDR(pages), PTE_U);
 
 	//////////////////////////////////////////////////////////////////////
 	// Map the 'envs' array read-only by the user at linear address UENVS
@@ -195,17 +196,18 @@ void mem_init(void)
 	// Permissions:
 	//    - the new image at UENVS  -- kernel R, user R
 	//    - envs itself -- kernel RW, user NONE
+	// 将 'envs' 数组映射到地址UENVS处，用户只读
 	// LAB 3: Your code here.
-
+	boot_map_region(kern_pgdir, UENVS, NENV * sizeof(struct Env), PADDR(envs), PTE_U);
 	//////////////////////////////////////////////////////////////////////
-	// 将内核的栈映射到bootstack地址，用户不可读写，
+	// 将内核的栈bootstack映射到地址KSTACKTOP - KSTKSIZE处，用户不可读写，
 	// Your code goes here:
 	boot_map_region(kern_pgdir, KSTACKTOP - KSTKSIZE, KSTKSIZE, PADDR(bootstack), PTE_W);
 
 	//////////////////////////////////////////////////////////////////////
-	// 其余的地址全部映射到KERNBASE上，用户不可读写。
+	// 将[KERNBASE,0xffffffff]全部映射到物理地址0的上方，用户不可读写。
 	// Your code goes here:
-	boot_map_region(kern_pgdir, KERNBASE, 0x100000000 - KERNBASE, 0, PTE_U);
+	boot_map_region(kern_pgdir, KERNBASE, 0xffffffff - KERNBASE, 0, PTE_W);
 
 	// Check that the initial page directory has been set up correctly.
 	check_kern_pgdir();
@@ -246,7 +248,7 @@ void page_init(void)
 	// npages_basemem：[KERNBASE,BASEMEM]的内存一共有npages_basemem页，因此将pages数组的前npages_basemem个元素加入链表
 	page_free_list = NULL; // page_free_list是static的，不会被初始化，必须给一个初始值
 
-	for (size_t i = 1; i < npages_basemem; i++) // 将内存中的pages数组初始化为链表，头指针是page_free_list
+	for (int i = 1; i < npages_basemem; i++) // 将内存中的pages数组初始化为链表，头指针是page_free_list
 	{
 		pages[i].pp_ref = 0;
 		pages[i].pp_link = page_free_list;
@@ -254,7 +256,7 @@ void page_init(void)
 	}
 
 	// 由于[BASEMEM,pages start]的内存已经被占用，不能使用，因此链表直接跳过这部分
-	for (size_t i = PGNUM(PADDR(boot_alloc(0))); i < npages; i++) // PADDR()将虚拟地址转化为物理地址，boot_alloc(0)得到nextfree的位置(即pages end),PGNUM()求出需要几页才能到达该地址
+	for (int i = PGNUM(PADDR(boot_alloc(0))); i < npages; i++) // PADDR()将虚拟地址转化为物理地址，boot_alloc(0)得到nextfree的位置(即pages end),PGNUM()求出需要几页才能到达该地址
 	{
 		pages[i].pp_ref = 0;
 		pages[i].pp_link = page_free_list;
@@ -345,7 +347,7 @@ pgdir_walk(pde_t *pgdir, const void *va, int create)
 static void boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm)
 {
 	// Fill this function in
-	for (size_t i = 0; i < size; i += PGSIZE) // 以页为单位操作映射
+	for (int i = 0; i < size; i += PGSIZE) // 以页为单位操作映射
 	{
 		tlb_invalidate(pgdir, (void *)va + i);					 // 使TLB无效
 		pte_t *pte = pgdir_walk(pgdir, (const void *)va + i, 1); // 得到虚拟地址对应的pte
@@ -434,7 +436,18 @@ static uintptr_t user_mem_check_addr;
 int user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 {
 	// LAB 3: Your code here.
-
+	// 先做个页面对齐
+	const void *start = ROUNDDOWN(va, PGSIZE);
+	const void *end = ROUNDUP(va + len, PGSIZE);
+	for (; start < end; start += PGSIZE) // 遍历每一页
+	{
+		pte_t *pte = pgdir_walk(env->env_pgdir, start, 0);	   // 找到pte,pte只能在ULIM下方，因此若pte存在，则地址存在
+		if (!pte || (*pte & (perm | PTE_P)) != (perm | PTE_P)) // 确认权限，&操作可以得到那几个权限位来判断
+		{
+			user_mem_check_addr = (uintptr_t)MAX(start, va); // 第一个错误的虚拟地址
+			return -E_FAULT;								 // 提前返回
+		}
+	}
 	return 0;
 }
 

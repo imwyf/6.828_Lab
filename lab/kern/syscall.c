@@ -1,3 +1,11 @@
+/*
+ * @Author: imwyf 1185095602@qq.com
+ * @Date: 2023-05-26 16:31:18
+ * @LastEditors: imwyf 1185095602@qq.com
+ * @LastEditTime: 2023-06-02 13:02:19
+ * @FilePath: /imwyf/6.828/lab/kern/syscall.c
+ * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+ */
 /* See COPYRIGHT for copyright information. */
 
 #include <inc/x86.h>
@@ -19,8 +27,9 @@ sys_cputs(const char *s, size_t len)
 {
 	// Check that the user has permission to read memory [s, s+len).
 	// Destroy the environment if not.
-
 	// LAB 3: Your code here.
+	// 跟随syscall调用链我们可以知道，s = %edx，len = %ecx
+	user_mem_assert(curenv, s, len, PTE_U);
 
 	// Print the string supplied by the user.
 	cprintf("%.*s", len, s);
@@ -70,11 +79,21 @@ syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
 	// Return any appropriate return value.
 	// LAB 3: Your code here.
 
-	panic("syscall not implemented");
+	// panic("syscall not implemented");
 
-	switch (syscallno) {
+	switch (syscallno) // 根据系统调用编号，调用相应的处理函数，枚举值即为inc\syscall.h中定义的值
+	{
+	case SYS_cputs:
+		sys_cputs((char *)a1, (size_t)a2);
+		return 0;
+	case SYS_cgetc:
+		return sys_cgetc();
+	case SYS_getenvid:
+		return sys_getenvid();
+	case SYS_env_destroy:
+		return sys_env_destroy((envid_t)a1);
+	case NSYSCALLS:
 	default:
 		return -E_INVAL;
 	}
 }
-

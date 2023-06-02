@@ -1,3 +1,11 @@
+/*
+ * @Author: imwyf 1185095602@qq.com
+ * @Date: 2023-05-26 16:31:18
+ * @LastEditors: imwyf 1185095602@qq.com
+ * @LastEditTime: 2023-05-28 15:34:20
+ * @FilePath: /imwyf/6.828/lab/inc/env.h
+ * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+ */
 /* See COPYRIGHT for copyright information. */
 
 #ifndef JOS_INC_ENV_H
@@ -25,12 +33,13 @@ typedef int32_t envid_t;
 // envid_ts less than 0 signify errors.  The envid_t == 0 is special, and
 // stands for the current environment.
 
-#define LOG2NENV		10
-#define NENV			(1 << LOG2NENV)
-#define ENVX(envid)		((envid) & (NENV - 1))
+#define LOG2NENV 10
+#define NENV (1 << LOG2NENV)
+#define ENVX(envid) ((envid) & (NENV - 1))
 
 // Values of env_status in struct Env
-enum {
+enum
+{
 	ENV_FREE = 0,
 	ENV_DYING,
 	ENV_RUNNABLE,
@@ -39,21 +48,28 @@ enum {
 };
 
 // Special environment types
-enum EnvType {
+enum EnvType
+{
 	ENV_TYPE_USER = 0,
 };
 
-struct Env {
-	struct Trapframe env_tf;	// Saved registers
-	struct Env *env_link;		// Next free Env
-	envid_t env_id;			// Unique environment identifier
-	envid_t env_parent_id;		// env_id of this env's parent
-	enum EnvType env_type;		// Indicates special system environments
-	unsigned env_status;		// Status of the environment
-	uint32_t env_runs;		// Number of times environment has run
+struct Env
+{
+	struct Trapframe env_tf; // 保存的寄存器值，当从用户模式切换到内核模式时，内核会保存这些内容，以便以后恢复环境
+	struct Env *env_link;	 // Next 指针
+	envid_t env_id;			 // 该id唯一地标识使用此Env结构的环境，在用户环境终止后，内核可以将相同的Env结构重新分配给不同的环境，但新环境将具有与旧环境不同的id
+	envid_t env_parent_id;	 // 创建该环境的环境的id
+	enum EnvType env_type;	 // 用来区分特殊环境的，对于大多数环境，它的值是ENV_TYPE_USER
+	unsigned env_status;	 // 指示环境的状态：有五种
+							 // ENV_FREE:指示Env结构处于非活动状态，因此处于Env_free_list上
+							 // ENV_RUNNABLE:指示Env结构等待在处理器上运行
+							 // ENV_RUNNING:指示Env结构是当前运行的环境
+							 // ENV_NOT_RUNNABLE:指示Env结构尚未准备好运行：例如，它正在等待来自另一个环境的进程间通信（IPC）
+							 // ENV_DYING:指示环境结构表示僵尸环境，僵尸环境将在进入到内核时被释放
+	uint32_t env_runs;		 // Number of times environment has run
 
 	// Address space
-	pde_t *env_pgdir;		// Kernel virtual address of page dir
+	pde_t *env_pgdir; // 此变量保存此环境的页表目录的虚拟地址。
 };
 
 #endif // !JOS_INC_ENV_H
