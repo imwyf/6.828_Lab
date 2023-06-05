@@ -2,7 +2,7 @@
  * @Author: imwyf 1185095602@qq.com
  * @Date: 2023-05-26 16:31:18
  * @LastEditors: imwyf 1185095602@qq.com
- * @LastEditTime: 2023-05-28 15:34:20
+ * @LastEditTime: 2023-06-05 10:10:26
  * @FilePath: /imwyf/6.828/lab/inc/env.h
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -67,9 +67,20 @@ struct Env
 							 // ENV_NOT_RUNNABLE:指示Env结构尚未准备好运行：例如，它正在等待来自另一个环境的进程间通信（IPC）
 							 // ENV_DYING:指示环境结构表示僵尸环境，僵尸环境将在进入到内核时被释放
 	uint32_t env_runs;		 // Number of times environment has run
+	int env_cpunum;			// The CPU that the env is running on
 
 	// Address space
 	pde_t *env_pgdir; // 此变量保存此环境的页表目录的虚拟地址。
+
+	// Exception handling
+	void *env_pgfault_upcall;	// Page fault upcall entry point
+
+	// Lab 4 IPC
+	bool env_ipc_recving;		// Env is blocked receiving
+	void *env_ipc_dstva;		// VA at which to map received page
+	uint32_t env_ipc_value;		// Data value sent to us
+	envid_t env_ipc_from;		// envid of the sender
+	int env_ipc_perm;		// Perm of page mapping received
 };
 
 #endif // !JOS_INC_ENV_H
