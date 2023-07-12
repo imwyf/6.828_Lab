@@ -16,7 +16,7 @@
 #include <kern/spinlock.h>
 
 struct Env *envs = NULL;		  // All environments
-// struct Env *curenv = NULL;		  // The current env
+
 static struct Env *env_free_list; // Free environment list
 								  // (linked by Env->env_link)
 
@@ -269,6 +269,7 @@ int env_alloc(struct Env **newenv_store, envid_t parent_id)
 
 	// Enable interrupts while in user mode.
 	// LAB 4: Your code here.
+	e->env_tf.tf_eflags |= FL_IF;
 
 	// Clear the page fault handler until user installs one.
 	e->env_pgfault_upcall = 0;
@@ -555,6 +556,7 @@ void env_run(struct Env *e)
 	curenv->env_status = ENV_RUNNING; // 将其状态设置为 ENV_RUNNING
 	curenv->env_runs++;				  // 更新其“env_runs”计数器
 	lcr3(PADDR(curenv->env_pgdir));	  // 切换到用户空间
+	unlock_kernel();
 	env_pop_tf(&e->env_tf); // 恢复环境的寄存器来进入环境中的用户模式，设置%eip为可执行程序的第一条指令
 
 	// panic("env_run not yet implemented");

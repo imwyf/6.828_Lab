@@ -1,3 +1,11 @@
+/*
+ * @Author: imwyf 1185095602@qq.com
+ * @Date: 2023-06-05 10:09:06
+ * @LastEditors: imwyf 1185095602@qq.com
+ * @LastEditTime: 2023-07-12 20:41:35
+ * @FilePath: /imwyf/6.828/lab/lib/ipc.c
+ * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+ */
 // User-level IPC library routines
 
 #include <inc/lib.h>
@@ -23,8 +31,28 @@ int32_t
 ipc_recv(envid_t *from_env_store, void *pg, int *perm_store)
 {
 	// LAB 4: Your code here.
-	panic("ipc_recv not implemented");
-	return 0;
+	int Ecode;
+	Ecode = pg ? sys_ipc_recv(pg) : sys_ipc_recv((void *)UTOP);
+	if (Ecode < 0)
+	{
+		if (from_env_store)
+			*from_env_store = 0;
+		if (perm_store)
+			*perm_store = 0;
+		return Ecode;
+	}
+
+	if (from_env_store)
+		*from_env_store = thisenv->env_ipc_from;
+	if (perm_store)
+	{
+		if ((uintptr_t)pg < UTOP)
+			*perm_store = thisenv->env_ipc_perm;
+		else
+			*perm_store = 0;
+	}
+
+	return thisenv->env_ipc_value;
 }
 
 // Send 'val' (and 'pg' with 'perm', if 'pg' is nonnull) to 'toenv'.
@@ -35,11 +63,19 @@ ipc_recv(envid_t *from_env_store, void *pg, int *perm_store)
 //   Use sys_yield() to be CPU-friendly.
 //   If 'pg' is null, pass sys_ipc_try_send a value that it will understand
 //   as meaning "no page".  (Zero is not the right value.)
-void
-ipc_send(envid_t to_env, uint32_t val, void *pg, int perm)
+void ipc_send(envid_t to_env, uint32_t val, void *pg, int perm)
 {
 	// LAB 4: Your code here.
-	panic("ipc_send not implemented");
+	while (true)
+	{
+		int Ecode = pg ? sys_ipc_try_send(to_env, val, pg, perm) : sys_ipc_try_send(to_env, val, (void *)UTOP, perm);
+		if (Ecode == 0)
+			break;
+		if (Ecode == -E_IPC_NOT_RECV)
+			sys_yield();
+		else
+			panic("sys_ipc_try_send error: in ipc_send()");
+	}
 }
 
 // Find the first environment of the given type.  We'll use this to

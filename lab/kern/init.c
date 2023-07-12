@@ -17,9 +17,7 @@
 
 static void boot_aps(void);
 
-
-void
-i386_init(void)
+void i386_init(void)
 {
 	extern char edata[], end[];
 
@@ -50,7 +48,7 @@ i386_init(void)
 
 	// Acquire the big kernel lock before waking up APs
 	// Your code here:
-
+	lock_kernel(); // 获取锁
 	// Starting non-boot CPUs
 	boot_aps();
 
@@ -59,9 +57,12 @@ i386_init(void)
 	ENV_CREATE(TEST, ENV_TYPE_USER);
 #else
 	// Touch all you want.
-	ENV_CREATE(user_primes, ENV_TYPE_USER);
-#endif // TEST*
-
+	// 练习6时，user_primes使用的fork系统调用还未实现，会在练习7实现
+	ENV_CREATE(user_primes, ENV_TYPE_USER); // 因此这句练习6注掉，练习7恢复
+#endif									   // TEST*
+	// ENV_CREATE(user_yield, ENV_TYPE_USER); // 这些是练习6的代码，练习7记得注释掉
+	// ENV_CREATE(user_yield, ENV_TYPE_USER);
+	// ENV_CREATE(user_yield, ENV_TYPE_USER);
 	// Schedule and run the first user environment!
 	sched_yield();
 }
@@ -84,25 +85,25 @@ boot_aps(void)
 	memmove(code, mpentry_start, mpentry_end - mpentry_start);
 
 	// Boot each AP one at a time
-	for (c = cpus; c < cpus + ncpu; c++) {
-		if (c == cpus + cpunum())  // We've started already.
+	for (c = cpus; c < cpus + ncpu; c++)
+	{
+		if (c == cpus + cpunum()) // We've started already.
 			continue;
 
-		// Tell mpentry.S what stack to use 
+		// Tell mpentry.S what stack to use
 		mpentry_kstack = percpu_kstacks[c - cpus] + KSTKSIZE;
 		// Start the CPU at mpentry_start
 		lapic_startap(c->cpu_id, PADDR(code));
 		// Wait for the CPU to finish some basic setup in mp_main()
-		while(c->cpu_status != CPU_STARTED)
+		while (c->cpu_status != CPU_STARTED)
 			;
 	}
 }
 
 // Setup code for APs
-void
-mp_main(void)
+void mp_main(void)
 {
-	// We are in high EIP now, safe to switch to kern_pgdir 
+	// We are in high EIP now, safe to switch to kern_pgdir
 	lcr3(PADDR(kern_pgdir));
 	cprintf("SMP: CPU %d starting\n", cpunum());
 
@@ -116,9 +117,8 @@ mp_main(void)
 	// only one CPU can enter the scheduler at a time!
 	//
 	// Your code here:
-
-	// Remove this after you finish Exercise 6
-	for (;;);
+	lock_kernel();
+	sched_yield();
 }
 
 /*
@@ -131,8 +131,7 @@ const char *panicstr;
  * Panic is called on unresolvable fatal errors.
  * It prints "panic: mesg", and then enters the kernel monitor.
  */
-void
-_panic(const char *file, int line, const char *fmt,...)
+void _panic(const char *file, int line, const char *fmt, ...)
 {
 	va_list ap;
 
@@ -156,8 +155,7 @@ dead:
 }
 
 /* like panic, but don't */
-void
-_warn(const char *file, int line, const char *fmt,...)
+void _warn(const char *file, int line, const char *fmt, ...)
 {
 	va_list ap;
 

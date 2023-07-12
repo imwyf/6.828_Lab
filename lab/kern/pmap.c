@@ -201,7 +201,8 @@ void mem_init(void)
 	// 将 'envs' 数组映射到地址UENVS处，用户只读
 	// LAB 3: Your code here.
 	boot_map_region(kern_pgdir, UENVS, NENV * sizeof(struct Env), PADDR(envs), PTE_U);
-	// //////////////////////////////////////////////////////////////////////
+
+	////////////////////////////////////////////////////////////////////////
 	// Use the physical memory that 'bootstack' refers to as the kernel
 	// stack.  The kernel stack grows down from virtual address KSTACKTOP.
 	// We consider the entire range from [KSTACKTOP-PTSIZE, KSTACKTOP)
@@ -276,7 +277,13 @@ mem_init_mp(void)
 	//     Permissions: kernel RW, user NONE
 	//
 	// LAB 4: Your code here:
+	for (int i = 0; i < NCPU; i++)
+	{
+		// [kstacktop_i - KSTKSIZE, kstacktop_i)需要映射,kstacktop_i = KSTACKTOP - i * (KSTKSIZE + KSTKGAP)
+		boot_map_region(kern_pgdir, KSTACKTOP - i * (KSTKSIZE + KSTKGAP) - KSTKSIZE, KSTKSIZE, PADDR(percpu_kstacks[i]), PTE_W); // percpu_kstacks[i]指向的物理内存作为其内核堆栈映射到的地址
 
+		// [kstacktop_i - (KSTKSIZE + KSTKGAP), kstacktop_i - KSTKSIZE)作为保护区，不映射
+	}
 }
 
 // --------------------------------------------------------------
@@ -290,15 +297,18 @@ mem_init_mp(void)
  */
 void page_init(void)
 {
-	// LAB 4:
-	// Change your code to mark the physical page at MPENTRY_PADDR
-	// as in use
-
 	// npages_basemem：[KERNBASE,BASEMEM]的内存一共有npages_basemem页，因此将pages数组的前npages_basemem个元素加入链表
 	page_free_list = NULL; // page_free_list是static的，不会被初始化，必须给一个初始值
 
+	// LAB 4:
+	// Change your code to mark the physical page at MPENTRY_PADDR
+	// as in use
+	struct PageInfo *mp_entry_page = pa2page(MPENTRY_PADDR); // mp的入口程序只需要一页
+
 	for (int i = 1; i < npages_basemem; i++) // 将内存中的pages数组初始化为链表，头指针是page_free_list
 	{
+		if (pages + i == mp_entry_page)
+			continue;
 		pages[i].pp_ref = 0;
 		pages[i].pp_link = page_free_list;
 		page_free_list = &pages[i]; // pages中包含了整个内存中的页，page_free_list指向其中空闲的页组成的链表的头部
@@ -369,7 +379,7 @@ pgdir_walk(pde_t *pgdir, const void *va, int create)
 	pte_t *pte_tab;
 	pte_t *result;
 
-	if (*pde && PTE_P) // 当“va”的PTE所在的页存在，该页对应的条目在目录中的值就!=0
+	if (*pde & PTE_P) // 当“va”的PTE所在的页存在，该页对应的条目在目录中的值就!=0
 	{
 		pte_tab = (pte_t *)KADDR(PTE_ADDR(*pde)); // PTE_ADDR()获得该条目对应的页的物理地址，KADDR()把物理地址转为虚拟地址
 		result = &pte_tab[PTX(va)];				  // 页里存的就是PTE表，用PTX(va)得到页索引，索引到对应的pte的地址
@@ -404,7 +414,7 @@ static void boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t 
 	}
 }
 
-// 将物理页面“pp”映射到虚拟地址“va”。页表条目的权限（低12位）应该设置为'perm | PTE_P'
+// 将物理页面“pp”映射到虚拟地址“va”。页表条目的权限（低12位）应该设置为'perm | PTE_P'，成功返回0，失败返回-E_NO_MEM
 int page_insert(pde_t *pgdir, struct PageInfo *pp, void *va, int perm)
 {
 	// Fill this function in
@@ -474,7 +484,7 @@ mmio_map_region(physaddr_t pa, size_t size)
 	// beginning of the MMIO region.  Because this is static, its
 	// value will be preserved between calls to mmio_map_region
 	// (just like nextfree in boot_alloc).
-	static uintptr_t base = MMIOBASE;
+	static uintptr_t base = MMIOBASE; // base指向还没有使用的区域，类似于nextfree
 
 	// Reserve size bytes of virtual memory starting at base and
 	// map physical pages [pa,pa+size) to virtual addresses
@@ -494,7 +504,17 @@ mmio_map_region(physaddr_t pa, size_t size)
 	// Hint: The staff solution uses boot_map_region.
 	//
 	// Your code here:
-	panic("mmio_map_region not implemented");
+	// 先做个对齐
+	size = ROUNDUP(size, PGSIZE);
+	// 检查虚拟内存是否越界
+	if (base + size > MMIOLIM)
+		panic("mmio_map_region: out of MMIOLIM!");
+	// 映射
+	boot_map_region(kern_pgdir, base, size, pa, PTE_PCD | PTE_PWT | PTE_W);
+	// 更新base
+	base += size;
+	// panic("mmio_map_region not implemented");
+	return (void *)(base - size); // 返回更新前的base
 }
 
 static uintptr_t user_mem_check_addr;
@@ -729,11 +749,11 @@ check_kern_pgdir(void)
 
 	// check kernel stack
 	// (updated in lab 4 to check per-CPU kernel stacks)
-	for (n = 0; n < NCPU; n++) {
+	for (n = 0; n < NCPU; n++)
+	{
 		uint32_t base = KSTACKTOP - (KSTKSIZE + KSTKGAP) * (n + 1);
 		for (i = 0; i < KSTKSIZE; i += PGSIZE)
-			assert(check_va2pa(pgdir, base + KSTKGAP + i)
-				== PADDR(percpu_kstacks[n]) + i);
+			assert(check_va2pa(pgdir, base + KSTKGAP + i) == PADDR(percpu_kstacks[n]) + i);
 		for (i = 0; i < KSTKGAP; i += PGSIZE)
 			assert(check_va2pa(pgdir, base + i) == ~0);
 	}
@@ -934,8 +954,8 @@ check_page(void)
 	page_free(pp2);
 
 	// test mmio_map_region
-	mm1 = (uintptr_t) mmio_map_region(0, 4097);
-	mm2 = (uintptr_t) mmio_map_region(0, 4096);
+	mm1 = (uintptr_t)mmio_map_region(0, 4097);
+	mm2 = (uintptr_t)mmio_map_region(0, 4096);
 	// check that they're in the right region
 	assert(mm1 >= MMIOBASE && mm1 + 8096 < MMIOLIM);
 	assert(mm2 >= MMIOBASE && mm2 + 8096 < MMIOLIM);
@@ -945,16 +965,16 @@ check_page(void)
 	assert(mm1 + 8096 <= mm2);
 	// check page mappings
 	assert(check_va2pa(kern_pgdir, mm1) == 0);
-	assert(check_va2pa(kern_pgdir, mm1+PGSIZE) == PGSIZE);
+	assert(check_va2pa(kern_pgdir, mm1 + PGSIZE) == PGSIZE);
 	assert(check_va2pa(kern_pgdir, mm2) == 0);
-	assert(check_va2pa(kern_pgdir, mm2+PGSIZE) == ~0);
+	assert(check_va2pa(kern_pgdir, mm2 + PGSIZE) == ~0);
 	// check permissions
-	assert(*pgdir_walk(kern_pgdir, (void*) mm1, 0) & (PTE_W|PTE_PWT|PTE_PCD));
-	assert(!(*pgdir_walk(kern_pgdir, (void*) mm1, 0) & PTE_U));
+	assert(*pgdir_walk(kern_pgdir, (void *)mm1, 0) & (PTE_W | PTE_PWT | PTE_PCD));
+	assert(!(*pgdir_walk(kern_pgdir, (void *)mm1, 0) & PTE_U));
 	// clear the mappings
-	*pgdir_walk(kern_pgdir, (void*) mm1, 0) = 0;
-	*pgdir_walk(kern_pgdir, (void*) mm1 + PGSIZE, 0) = 0;
-	*pgdir_walk(kern_pgdir, (void*) mm2, 0) = 0;
+	*pgdir_walk(kern_pgdir, (void *)mm1, 0) = 0;
+	*pgdir_walk(kern_pgdir, (void *)mm1 + PGSIZE, 0) = 0;
+	*pgdir_walk(kern_pgdir, (void *)mm2, 0) = 0;
 
 	cprintf("check_page() succeeded!\n");
 }
