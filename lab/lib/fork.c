@@ -2,7 +2,7 @@
  * @Author: imwyf 1185095602@qq.com
  * @Date: 2023-06-05 10:09:06
  * @LastEditors: imwyf 1185095602@qq.com
- * @LastEditTime: 2023-06-25 13:49:39
+ * @LastEditTime: 2023-07-20 19:34:26
  * @FilePath: /imwyf/6.828/lab/lib/fork.c
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -110,6 +110,12 @@ duppage(envid_t envid, unsigned pn)
 		{
 			panic("sys_page_map error");
 		}
+	}
+	if (uvpt[pn] & (PTE_SHARE)) // 新增对PTE_SHARE的处理
+	{
+		Ecode = sys_page_map(0, (void *)addr, envid, (void *)addr, uvpt[pn] & PTE_SYSCALL);
+		if (Ecode)
+			return Ecode;
 	}
 	return 0;
 }

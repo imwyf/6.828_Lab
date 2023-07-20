@@ -2,7 +2,7 @@
  * @Author: imwyf 1185095602@qq.com
  * @Date: 2023-05-26 16:31:18
  * @LastEditors: imwyf 1185095602@qq.com
- * @LastEditTime: 2023-07-12 20:37:12
+ * @LastEditTime: 2023-07-20 19:25:04
  * @FilePath: /imwyf/6.828/lab/kern/syscall.c
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -148,7 +148,16 @@ sys_env_set_trapframe(envid_t envid, struct Trapframe *tf)
 	// LAB 5: Your code here.
 	// Remember to check whether the user has supplied us with a good
 	// address!
-	panic("sys_env_set_trapframe not implemented");
+	struct Env *e;
+	int r = envid2env(envid, &e, 1);
+	if (r != 0)
+		return r; //-E_BAD_ENV在这
+	user_mem_assert(e, (const void *)tf, sizeof(struct Trapframe), PTE_U);
+	tf->tf_eflags |= FL_IF;
+	tf->tf_eflags &= ~FL_IOPL_MASK; // 普通进程不能有IO权限
+	tf->tf_cs |= 3;
+	e->env_tf = *tf;
+	return 0;
 }
 
 // Set the page fault upcall for 'envid' by modifying the corresponding struct
@@ -482,6 +491,8 @@ syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
 		return sys_ipc_try_send((envid_t)a1, (uint32_t)a2, (void *)a3, (unsigned int)a4);
 	case SYS_ipc_recv:
 		return sys_ipc_recv((void *)a1);
+	case SYS_env_set_trapframe:
+		sys_env_set_trapframe((envid_t)a1, (void *)a2);
 	case NSYSCALLS:
 	default:
 		return -E_INVAL;
